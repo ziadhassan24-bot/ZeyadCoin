@@ -1,0 +1,329 @@
+import { useState } from "react";
+import {
+  AlertCircle,
+  Code2,
+  Coins,
+  Loader2,
+  Sparkles,
+  Wallet,
+} from "lucide-react";
+import {
+  DEFAULT_LANGUAGE,
+  LANGUAGES,
+  SEPOLIA_CHAIN_ID,
+  TOKEN,
+  type Language,
+} from "../config";
+import { useTasks } from "../hooks/useTasks";
+import { useClaim } from "../hooks/useClaim";
+import type { UseWalletReturn } from "../hooks/useWallet";
+import TaskCard from "./TaskCard";
+import RewardBanner from "./RewardBanner";
+import QuizReview from "./QuizReview";
+
+/**
+ * The core earning area:
+ *   - pick a language and get 3 questions (answers hidden, graded server-side)
+ *   - answer each (one attempt)
+ *   - when all 3 are answered, submit to /api/claim; if all correct, the backend
+ *     returns a signed claim and we release real ZYD from the faucet on-chain.
+ */
+interface EarnTasksProps {
+  wallet: UseWalletReturn;
+}
+
+export default function EarnTasks({ wallet }: EarnTasksProps) {
+  const {
+    tasks,
+    sessionId,
+    loading,
+    error,
+    source,
+    language,
+    allAnswered,
+    fetchTasks,
+    selectOption,
+  } = useTasks();
+
+  const [selectedLanguage, setSelectedLanguage] = useState<Language>(DEFAULT_LANGUAGE);
+  const claim = useClaim(wallet);
+
+  const hasTasks = tasks.length === 3;
+  const answeredCount = tasks.filter((t) => t.selectedIndex !== null).length;
+  const claimBusy = claim.status === "submitting" || claim.status === "claiming";
+
+  // Get a fresh set of questions (also clears any previous claim state).
+  async function getQuestions() {
+    claim.reset();
+    await fetchTasks(selectedLanguage);
+  }
+
+  // Submit the chosen answers for grading + claim.
+  async function handleClaim() {
+    if (!sessionId) return;
+    const answers = tasks.map((t) => t.selectedIndex ?? -1);
+    await claim.claim(sessionId, answers);
+  }
+
+  return (
+    <section id="earn" className="px-5 py-16">
+      <div className="mx-auto max-w-6xl">
+        <div className="mb-3 flex items-center gap-2">
+          <Sparkles className="h-5 w-5" strokeWidth={2.5} />
+          <span className="text-sm font-bold uppercase tracking-widest text-zinc-500">
+            Step 1 · Answer the quiz
+          </span>
+        </div>
+        <h2 className="font-display mb-8 text-4xl font-bold tracking-tight md:text-5xl">
+          Earn your ZYD
+        </h2>
+
+        {/* Language selector */}
+        <div className="mb-6">
+          <div className="mb-2 text-sm font-bold uppercase tracking-wide text-zinc-500">
+            Language
+          </div>
+          <div className="flex flex-wrap gap-3">
+            {LANGUAGES.map((lang) => {
+              const active = selectedLanguage === lang;
+              return (
+                <button
+                  key={lang}
+                  type="button"
+                  onClick={() => setSelectedLanguage(lang)}
+                  disabled={loading || claimBusy}
+                  className={`brutal-border rounded-lg px-4 py-2 font-bold shadow-brutal-sm transition-all disabled:opacity-60 ${
+                    active ? "bg-ink text-white" : "bg-cream brutal-hover"
+                  }`}
+                >
+                  {lang}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Get questions + progress */}
+        <div className="flex flex-wrap items-center gap-4">
+          <button
+            type="button"
+            onClick={getQuestions}
+            disabled={loading || claimBusy}
+            className="brutal-border bg-green brutal-hover inline-flex items-center gap-3 rounded-xl px-7 py-4 font-bold shadow-brutal disabled:cursor-wait disabled:opacity-70"
+          >
+            {loading ? (
+              <Loader2 className="h-5 w-5 animate-spin" strokeWidth={2} />
+            ) : (
+              <Code2 className="h-5 w-5" strokeWidth={2} />
+            )}
+            {loading
+              ? "Getting questions..."
+              : hasTasks
+                ? "Get a new set of questions"
+                : "Get my 3 quiz questions"}
+          </button>
+
+          {hasTasks && (
+            <>
+              {language && (
+                <span className="brutal-border bg-blue rounded-md px-2.5 py-1 text-xs font-bold uppercase tracking-wide">
+                  {language} quiz
+                </span>
+              )}
+              <span className="font-bold">{answeredCount} / 3 answered</span>
+              {source && (
+                <span
+                  className="brutal-border rounded-md bg-cream px-2.5 py-1 text-xs font-bold uppercase tracking-wide"
+                  title={
+                    source === "groq"
+                      ? "Questions generated live by Groq."
+                      : "Groq was unavailable, so these are built-in fallback questions."
+                  }
+                >
+                  {source === "groq" ? "Generated by Groq" : "Demo fallback"}
+                </span>
+              )}
+            </>
+          )}
+        </div>
+
+        {/* Fetch error */}
+        {error && (
+          <div className="brutal-border bg-pink mt-6 flex items-center gap-3 rounded-xl p-4 shadow-brutal-sm">
+            <AlertCircle className="h-5 w-5 shrink-0" strokeWidth={2.5} />
+            <span className="text-sm font-semibold">
+              {error} — make sure the backend is running, then try again.
+            </span>
+          </div>
+        )}
+
+        {/* Questions */}
+        {hasTasks ? (
+          <div className="mt-10 grid gap-6 md:grid-cols-3">
+            {tasks.map((task, i) => (
+              <TaskCard
+                key={i}
+                index={i}
+                task={task}
+                language={language ?? undefined}
+                onSelect={selectOption}
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="mt-10 grid gap-6 md:grid-cols-3">
+            {[0, 1, 2].map((i) => (
+              <div
+                key={i}
+                className="brutal-border flex min-h-55 flex-col rounded-2xl bg-cream p-6 opacity-60 shadow-brutal"
+              >
+                <div className="brutal-border bg-yellow mb-4 flex h-10 w-10 items-center justify-center rounded-lg font-display text-lg font-bold">
+                  {i + 1}
+                </div>
+                <div className="mt-auto text-sm font-semibold text-zinc-400">
+                  Click the button above to load question {i + 1}.
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+
+        {/* Claim area (only once all 3 are answered) */}
+        {hasTasks && allAnswered && (
+          <ClaimArea
+            wallet={wallet}
+            claim={claim}
+            onClaim={handleClaim}
+            onNewSet={getQuestions}
+          />
+        )}
+      </div>
+    </section>
+  );
+}
+
+/**
+ * Renders the right call-to-action below the questions once all are answered:
+ * connect wallet / switch network / claim, plus success, "wrong", and error
+ * states.
+ */
+function ClaimArea({
+  wallet,
+  claim,
+  onClaim,
+  onNewSet,
+}: {
+  wallet: UseWalletReturn;
+  claim: ReturnType<typeof useClaim>;
+  onClaim: () => void;
+  onNewSet: () => void;
+}) {
+  // Success: real ZYD released on-chain.
+  if (claim.status === "success" && claim.txHash) {
+    return <RewardBanner txHash={claim.txHash} onAgain={onNewSet} />;
+  }
+
+  // Not all correct (or session expired): no reward, get a new set. When the
+  // answers were graded we also show the answer key so the user sees what they
+  // missed (rather than a mysterious "not correct").
+  if (claim.status === "wrong") {
+    return (
+      <div className="brutal-border bg-pink mt-10 rounded-2xl p-6 shadow-brutal">
+        <p className="font-semibold">
+          {claim.message ?? "Not all correct — get a new set and try again."}
+        </p>
+
+        {claim.review && claim.review.length > 0 && (
+          <QuizReview review={claim.review} />
+        )}
+
+        <button
+          type="button"
+          onClick={onNewSet}
+          className="brutal-border bg-ink brutal-hover mt-5 rounded-xl px-6 py-3 font-bold text-white shadow-brutal"
+        >
+          Get a new set of questions
+        </button>
+      </div>
+    );
+  }
+
+  const onSepolia = wallet.chainId === SEPOLIA_CHAIN_ID;
+  const busy = claim.status === "submitting" || claim.status === "claiming";
+
+  return (
+    <div className="brutal-border bg-yellow mt-10 rounded-2xl p-6 shadow-brutal md:p-8">
+      <div className="mb-1 flex items-center gap-2">
+        <Coins className="h-5 w-5" strokeWidth={2.5} />
+        <h3 className="font-display text-2xl font-bold">All 3 answered — claim your 3 {TOKEN.symbol}</h3>
+      </div>
+      <p className="mb-5 text-sm font-medium text-zinc-700">
+        Your answers are graded on the server. If all 3 are correct, the faucet
+        releases real {TOKEN.symbol} to your wallet. Claiming sends a transaction —
+        you need a little Sepolia ETH for gas.
+      </p>
+
+      {/* The action depends on wallet state. */}
+      {!wallet.address ? (
+        <button
+          type="button"
+          onClick={wallet.connect}
+          className="brutal-border bg-ink brutal-hover inline-flex items-center gap-2 rounded-xl px-7 py-4 font-bold text-white shadow-brutal"
+        >
+          <Wallet className="h-5 w-5" strokeWidth={2} />
+          Connect wallet to claim
+        </button>
+      ) : !onSepolia ? (
+        <button
+          type="button"
+          onClick={wallet.switchToSepolia}
+          className="brutal-border bg-ink brutal-hover inline-flex items-center gap-2 rounded-xl px-7 py-4 font-bold text-white shadow-brutal"
+        >
+          Switch to Sepolia to claim
+        </button>
+      ) : (
+        <button
+          type="button"
+          onClick={onClaim}
+          disabled={busy}
+          className="brutal-border bg-ink brutal-hover inline-flex items-center gap-2 rounded-xl px-7 py-4 font-bold text-white shadow-brutal disabled:cursor-wait disabled:opacity-70"
+        >
+          {busy && <Loader2 className="h-5 w-5 animate-spin" strokeWidth={2} />}
+          {claim.status === "submitting"
+            ? "Checking your answers..."
+            : claim.status === "claiming"
+              ? "Confirm in MetaMask..."
+              : `Claim 3 ${TOKEN.symbol}`}
+        </button>
+      )}
+
+      {/* Claim error (rejected, expired, nonce used, faucet empty, gas, ...) */}
+      {claim.status === "error" && claim.error && (
+        <div className="brutal-border mt-5 flex items-start gap-3 rounded-xl bg-cream p-4">
+          <AlertCircle className="mt-0.5 h-5 w-5 shrink-0" strokeWidth={2.5} />
+          <div className="text-sm font-semibold">
+            {claim.error}
+            <div className="mt-3 flex flex-wrap gap-3">
+              {claim.canRetry && (
+                <button
+                  type="button"
+                  onClick={claim.retry}
+                  className="brutal-border bg-ink brutal-hover rounded-lg px-4 py-2 font-bold text-white shadow-brutal-sm"
+                >
+                  Try claim again
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={onNewSet}
+                className="brutal-border bg-cream brutal-hover rounded-lg px-4 py-2 font-bold shadow-brutal-sm"
+              >
+                Get a new set
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

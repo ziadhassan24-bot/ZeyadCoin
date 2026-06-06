@@ -1,0 +1,93 @@
+/* ============================================================================
+   Zeyad Coin — global stylesheet (Tailwind v4 + neo-brutalist design system)
+
+   Tailwind v4 is configured entirely in CSS (no tailwind.config.js, no PostCSS).
+   - @import "tailwindcss"  pulls in the framework.
+   - @theme { ... }         defines design tokens. Each token auto-generates
+                            matching utility classes, e.g.
+                              --color-green   -> bg-green / text-green / border-green
+                              --font-display  -> font-display
+                              --shadow-brutal -> shadow-brutal
+   - @utility { ... }       defines extra custom utilities.
+   ========================================================================== */
+
+@import "tailwindcss";
+
+/* The Inter + Space Grotesk fonts are loaded via <link> tags in index.html. */
+
+@theme {
+  /* Fonts ------------------------------------------------------------------ */
+  --font-display: "Space Grotesk", sans-serif;
+  --font-sans: "Inter", sans-serif;
+
+  /* Palette (the exact hex tokens from the brutalist template) ------------- */
+  --color-cream: #fffdf7; /* page background */
+  --color-ink: #18181b; /* text + the hard black borders */
+  --color-green: #86efac; /* accent */
+  --color-yellow: #fde047; /* accent */
+  --color-pink: #ff9ebb; /* accent */
+  --color-blue: #bfdbfe; /* accent */
+
+  /* Neo-brutalist shadows: solid black, no blur, offset down-right --------- */
+  --shadow-brutal-sm: 2px 2px 0 0 #000;
+  --shadow-brutal: 4px 4px 0 0 #000;
+  --shadow-brutal-lg: 6px 6px 0 0 #000;
+}
+
+@layer base {
+  body {
+    background-color: var(--color-cream);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+
+    /* Faint grid: two repeating near-black lines, very low opacity. */
+    background-image:
+      linear-gradient(to right, rgba(0, 0, 0, 0.04) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(0, 0, 0, 0.04) 1px, transparent 1px);
+    background-size: 24px 24px;
+  }
+
+  /* Headings use the display font by default. */
+  h1,
+  h2,
+  h3,
+  h4 {
+    font-family: var(--font-display);
+  }
+}
+
+/* The 2px solid black border used on every brutalist surface. */
+@utility brutal-border {
+  border: 2px solid #000;
+}
+
+/* Press-in hover: nudge down-right and shrink the shadow. Pair with a
+   shadow-brutal* class on the same element. */
+@utility brutal-hover {
+  transition:
+    transform 0.1s ease,
+    box-shadow 0.1s ease;
+  &:hover {
+    transform: translate(2px, 2px);
+    box-shadow: 2px 2px 0 0 #000;
+  }
+}
+
+/* Lift hover: float up-left and grow the shadow (used for big CTAs). */
+@utility brutal-hover-lift {
+  transition:
+    transform 0.1s ease,
+    box-shadow 0.1s ease;
+  &:hover {
+    transform: translate(-2px, -2px);
+    box-shadow: 6px 6px 0 0 #000;
+  }
+}
+
+/* Slight playful rotations for cards. */
+@utility rotate-left {
+  transform: rotate(-1.5deg);
+}
+@utility rotate-right {
+  transform: rotate(1.5deg);
+}
