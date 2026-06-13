@@ -313,6 +313,15 @@ function ClaimArea({
                   Try claim again
                 </button>
               )}
+              {claim.canUseGasless && (
+                <button
+                  type="button"
+                  onClick={claim.useGasless}
+                  className="brutal-border bg-yellow brutal-hover rounded-lg px-4 py-2 font-bold shadow-brutal-sm"
+                >
+                  ⚡ Get ZYD without gas (free)
+                </button>
+              )}
               <button
                 type="button"
                 onClick={onNewSet}

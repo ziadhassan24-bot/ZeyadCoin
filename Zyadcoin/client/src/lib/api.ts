@@ -96,3 +96,18 @@ export async function claimReward(body: {
   // expired session, or error), so we parse and let the caller read .success.
   return (await res.json()) as ClaimResponse;
 }
+
+// POST /api/claim/gasless — request a gasless transfer (backend sends ZYD directly)
+export async function claimGasless(userAddress: string): Promise<{
+  success: boolean;
+  txHash?: string;
+  amount?: string;
+  message?: string;
+}> {
+  const res = await fetch(`${API_BASE}/api/claim/gasless`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ userAddress }),
+  });
+  return await res.json();
+}

@@ -15,7 +15,7 @@
 
 import { useCallback, useState } from "react";
 import confetti from "canvas-confetti";
-import { claimReward, type ReviewItem } from "../lib/api";
+import { claimReward, claimGasless, type ReviewItem } from "../lib/api";
 import { claimFromFaucet } from "../lib/wallet";
 import { SEPOLIA_CHAIN_ID } from "../config";
 import type { UseWalletReturn } from "./useWallet";
@@ -80,6 +80,7 @@ export function useClaim(wallet: UseWalletReturn) {
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
   const [signedClaim, setSignedClaim] = useState<SignedClaim | null>(null);
+  const [canUseGasless, setCanUseGasless] = useState(false);
 
   // Send a (already obtained) signed claim to the faucet on-chain.
   const sendOnChain = useCallback(
@@ -106,6 +107,11 @@ export function useClaim(wallet: UseWalletReturn) {
       } catch (err) {
         setStatus("error");
         setError(describeClaimError(err));
+        // If it's a gas/revert issue, offer gasless as an alternative
+        const errText = String(err).toLowerCase();
+        if (errText.includes("gas") || errText.includes("insufficient") || errText.includes("revert")) {
+          setCanUseGasless(true);
+        }
       }
     },
     [wallet],
@@ -175,6 +181,32 @@ export function useClaim(wallet: UseWalletReturn) {
     if (signedClaim) await sendOnChain(signedClaim);
   }, [signedClaim, sendOnChain]);
 
+  // Use gasless transfer: backend sends ZYD directly (no gas required from user)
+  const useGasless = useCallback(async () => {
+    if (!wallet.address) {
+      setStatus("error");
+      setError("Connect your wallet first.");
+      return;
+    }
+    setStatus("claiming");
+    setError(null);
+    try {
+      const result = await claimGasless(wallet.address);
+      if (result.success && result.txHash) {
+        setTxHash(result.txHash);
+        setStatus("success");
+        confetti({ particleCount: 140, spread: 75, origin: { y: 0.6 } });
+        await wallet.refreshBalance();
+      } else {
+        setStatus("error");
+        setError(result.message || "Gasless transfer failed.");
+      }
+    } catch (err) {
+      setStatus("error");
+      setError("Could not complete gasless transfer. Please try again later.");
+    }
+  }, [wallet]);
+
   const reset = useCallback(() => {
     setStatus("idle");
     setMessage(null);
@@ -182,6 +214,7 @@ export function useClaim(wallet: UseWalletReturn) {
     setError(null);
     setTxHash(null);
     setSignedClaim(null);
+    setCanUseGasless(false);
   }, []);
 
   return {
@@ -191,8 +224,10 @@ export function useClaim(wallet: UseWalletReturn) {
     error,
     txHash,
     canRetry: signedClaim !== null,
+    canUseGasless,
     claim,
     retry,
+    useGasless,
     reset,
   };
 }

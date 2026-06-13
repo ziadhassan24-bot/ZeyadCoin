@@ -11,7 +11,7 @@
 
 import { Router } from "express";
 import rateLimit from "express-rate-limit";
-import { getAddress, randomBytes, toBigInt } from "ethers";
+import { Contract, JsonRpcProvider, getAddress, randomBytes, toBigInt, Wallet } from "ethers";
 import { deleteSession, getSession } from "../sessionStore.js";
 import { canSign, signClaim } from "../signer.js";
 import { hasClaimed, markClaimed } from "../claimTracker.js";
@@ -34,6 +34,8 @@ const claimLimiter = rateLimit({
 
 const REWARD_AMOUNT = 3n * 10n ** 18n; // 3 ZYD in base units (18 decimals)
 const DEADLINE_SECONDS = 10 * 60; // signature valid for 10 minutes
+const ZYD_TOKEN_ADDRESS = "0x4B1670D26Ce613BB8516FAD8BF0D4ACD234089E6";
+const SEPOLIA_RPC = process.env.SEPOLIA_RPC_URL || "https://ethereum-sepolia-rpc.publicnode.com";
 
 // A fresh random uint256 nonce so every claim is unique (the contract uses it
 // to prevent the same signature being redeemed twice).
@@ -145,9 +147,72 @@ claimRouter.post("/claim", claimLimiter, async (req, res) => {
       nonce: nonce.toString(),
       deadline: deadline.toString(),
       signature,
+      gaslessAvailable: true, // Signal that gasless transfer is available
     });
   } catch (err) {
     console.error("Failed to sign claim:", err);
     res.status(500).json({ success: false, message: "Failed to sign the claim." });
+  }
+});
+
+// NEW: POST /api/claim/gasless - Send ZYD directly from backend wallet (no gas required from user)
+// This endpoint allows users without Sepolia ETH to still receive their reward.
+claimRouter.post("/claim/gasless", claimLimiter, async (req, res) => {
+  const { userAddress } = req.body ?? {};
+
+  // Validate address
+  let user: string;
+  try {
+    user = getAddress(typeof userAddress === "string" ? userAddress : "");
+  } catch {
+    res.status(400).json({ success: false, message: "Invalid userAddress." });
+    return;
+  }
+
+  // Check if address already claimed
+  if (!hasClaimed(user)) {
+    res.status(403).json({
+      success: false,
+      message: "You must complete the quiz first and get a signed claim before using gasless transfer.",
+    });
+    return;
+  }
+
+  // Check if backend wallet has funds
+  const privateKey = process.env.SIGNER_PRIVATE_KEY;
+  if (!privateKey) {
+    res.status(500).json({ success: false, message: "Gasless transfer not configured." });
+    return;
+  }
+
+  try {
+    // Setup provider and wallet
+    const provider = new JsonRpcProvider(SEPOLIA_RPC);
+    const wallet = new Wallet(privateKey, provider);
+    
+    // Connect to ZYD token contract
+    const token = new Contract(
+      ZYD_TOKEN_ADDRESS,
+      ["function transfer(address to, uint256 amount) returns (bool)"],
+      wallet
+    );
+
+    // Send ZYD directly (backend pays gas)
+    console.log(`Gasless transfer: sending 3 ZYD to ${user}`);
+    const tx = await token.transfer(user, REWARD_AMOUNT);
+    await tx.wait();
+
+    res.json({
+      success: true,
+      txHash: tx.hash,
+      amount: REWARD_AMOUNT.toString(),
+      message: "ZYD sent directly to your wallet! No gas required.",
+    });
+  } catch (err) {
+    console.error("Gasless transfer failed:", err);
+    res.status(500).json({ 
+      success: false, 
+      message: "Failed to send ZYD. The backend may not have enough Sepolia ETH for gas, or the token balance is insufficient." 
+    });
   }
 });
