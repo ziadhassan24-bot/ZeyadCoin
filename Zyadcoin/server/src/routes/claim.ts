@@ -185,7 +185,18 @@ claimRouter.post("/claim", claimLimiter, async (req, res) => {
     return;
   }
 
-  // --- All correct: build and sign the EIP-712 claim ---
+  // --- All correct: check if already claimed, then sign or send gasless ---
+  // Check if this address has already claimed (per-address cap)
+  if (hasClaimed(user)) {
+    res.status(403).json({
+      success: false,
+      message: "This address has already claimed its ZYD.",
+    });
+    return;
+  }
+
+  // User prefers gasless or has no choice - send directly
+  // For simplicity, always use gasless for full credit too (no gas needed!)
   if (!canSign()) {
     res
       .status(500)
@@ -193,32 +204,39 @@ claimRouter.post("/claim", claimLimiter, async (req, res) => {
     return;
   }
 
-  const amount = REWARD_AMOUNT;
-  const nonce = randomNonce();
-  const deadline = BigInt(Math.floor(Date.now() / 1000) + DEADLINE_SECONDS);
-
   try {
-    // The EIP-712 value uses "recipient" as the key (matches the contract's
-    // Claim struct); `user` here is the validated/checksummed user address.
-    const signature = await signClaim({ recipient: user, amount, nonce, deadline });
-    
-    // Mark this address as having claimed ONLY after signature is successfully
-    // issued (all answers correct and signing succeeded).
-    markClaimed(user);
-    
-    // BigInts are returned as strings (JSON has no BigInt). The frontend passes
-    // these straight into the faucet's claim(...) call.
+    const privateKey = process.env.SIGNER_PRIVATE_KEY;
+    if (!privateKey) {
+      res.status(500).json({ success: false, message: "Gasless transfer not configured." });
+      return;
+    }
+
+    const provider = new JsonRpcProvider(SEPOLIA_RPC);
+    const wallet = new Wallet(privateKey, provider);
+    const token = new Contract(
+      ZYD_TOKEN_ADDRESS,
+      ["function transfer(address to, uint256 amount) returns (bool)"],
+      wallet
+    );
+
+    console.log(`Full credit: sending 3 ZYD to ${user}`);
+    const tx = await token.transfer(user, REWARD_AMOUNT);
+    await tx.wait();
+
+    markClaimed(user); // Mark as claimed after successful transfer
+
     res.json({
       success: true,
-      amount: amount.toString(),
-      nonce: nonce.toString(),
-      deadline: deadline.toString(),
-      signature,
-      gaslessAvailable: true, // Signal that gasless transfer is available
+      amount: REWARD_AMOUNT.toString(),
+      txHash: tx.hash,
+      message: "Perfect score! 3 ZYD sent directly to your wallet!",
     });
   } catch (err) {
-    console.error("Failed to sign claim:", err);
-    res.status(500).json({ success: false, message: "Failed to sign the claim." });
+    console.error("Full credit transfer failed:", err);
+    res.status(500).json({ 
+      success: false, 
+      message: "Failed to send ZYD. Please try again." 
+    });
   }
 });
 
