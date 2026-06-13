@@ -14,7 +14,6 @@ import rateLimit from "express-rate-limit";
 import { Contract, JsonRpcProvider, getAddress, randomBytes, toBigInt, Wallet } from "ethers";
 import { deleteSession, getSession } from "../sessionStore.js";
 import { canSign, signClaim } from "../signer.js";
-import { hasClaimed, markClaimed } from "../claimTracker.js";
 
 export const claimRouter = Router();
 
@@ -80,17 +79,6 @@ claimRouter.post("/claim", claimLimiter, async (req, res) => {
     return;
   }
 
-  // --- Check if this address has already claimed (per-address cap) ---
-  // Only addresses that successfully complete the quiz and get a signature
-  // count against this cap. Wrong answers do not consume it.
-  if (hasClaimed(user)) {
-    res.status(403).json({
-      success: false,
-      message: "This address has already claimed its ZYD.",
-    });
-    return;
-  }
-
   // Consume the session now: one graded attempt per session (prevents
   // brute-forcing the answers against the same set of questions).
   deleteSession(sessionId);
@@ -127,16 +115,6 @@ claimRouter.post("/claim", claimLimiter, async (req, res) => {
       yourIndex: answers[i],
     }));
 
-    // Check if address already claimed
-    if (hasClaimed(user)) {
-      res.status(403).json({
-        success: false,
-        message: "This address has already claimed its ZYD.",
-        review,
-      });
-      return;
-    }
-
     // Send partial credit via gasless transfer immediately
     const partialAmount = BigInt(correctCount) * 10n ** 18n; // 1 ZYD per correct answer
     
@@ -163,8 +141,6 @@ claimRouter.post("/claim", claimLimiter, async (req, res) => {
       const tx = await token.transfer(user, partialAmount);
       await tx.wait();
 
-      markClaimed(user); // Mark as claimed after successful transfer
-
       res.json({
         success: true,
         partialCredit: true,
@@ -185,18 +161,7 @@ claimRouter.post("/claim", claimLimiter, async (req, res) => {
     return;
   }
 
-  // --- All correct: check if already claimed, then sign or send gasless ---
-  // Check if this address has already claimed (per-address cap)
-  if (hasClaimed(user)) {
-    res.status(403).json({
-      success: false,
-      message: "This address has already claimed its ZYD.",
-    });
-    return;
-  }
-
-  // User prefers gasless or has no choice - send directly
-  // For simplicity, always use gasless for full credit too (no gas needed!)
+  // --- All correct: send full reward via gasless ---
   if (!canSign()) {
     res
       .status(500)
@@ -223,8 +188,6 @@ claimRouter.post("/claim", claimLimiter, async (req, res) => {
     const tx = await token.transfer(user, REWARD_AMOUNT);
     await tx.wait();
 
-    markClaimed(user); // Mark as claimed after successful transfer
-
     res.json({
       success: true,
       amount: REWARD_AMOUNT.toString(),
@@ -236,68 +199,6 @@ claimRouter.post("/claim", claimLimiter, async (req, res) => {
     res.status(500).json({ 
       success: false, 
       message: "Failed to send ZYD. Please try again." 
-    });
-  }
-});
-
-// NEW: POST /api/claim/gasless - Send ZYD directly from backend wallet (no gas required from user)
-// This endpoint allows users without Sepolia ETH to still receive their reward.
-claimRouter.post("/claim/gasless", claimLimiter, async (req, res) => {
-  const { userAddress } = req.body ?? {};
-
-  // Validate address
-  let user: string;
-  try {
-    user = getAddress(typeof userAddress === "string" ? userAddress : "");
-  } catch {
-    res.status(400).json({ success: false, message: "Invalid userAddress." });
-    return;
-  }
-
-  // Check if address already claimed
-  if (!hasClaimed(user)) {
-    res.status(403).json({
-      success: false,
-      message: "You must complete the quiz first and get a signed claim before using gasless transfer.",
-    });
-    return;
-  }
-
-  // Check if backend wallet has funds
-  const privateKey = process.env.SIGNER_PRIVATE_KEY;
-  if (!privateKey) {
-    res.status(500).json({ success: false, message: "Gasless transfer not configured." });
-    return;
-  }
-
-  try {
-    // Setup provider and wallet
-    const provider = new JsonRpcProvider(SEPOLIA_RPC);
-    const wallet = new Wallet(privateKey, provider);
-    
-    // Connect to ZYD token contract
-    const token = new Contract(
-      ZYD_TOKEN_ADDRESS,
-      ["function transfer(address to, uint256 amount) returns (bool)"],
-      wallet
-    );
-
-    // Send ZYD directly (backend pays gas)
-    console.log(`Gasless transfer: sending 3 ZYD to ${user}`);
-    const tx = await token.transfer(user, REWARD_AMOUNT);
-    await tx.wait();
-
-    res.json({
-      success: true,
-      txHash: tx.hash,
-      amount: REWARD_AMOUNT.toString(),
-      message: "ZYD sent directly to your wallet! No gas required.",
-    });
-  } catch (err) {
-    console.error("Gasless transfer failed:", err);
-    res.status(500).json({ 
-      success: false, 
-      message: "Failed to send ZYD. The backend may not have enough Sepolia ETH for gas, or the token balance is insufficient." 
     });
   }
 });
