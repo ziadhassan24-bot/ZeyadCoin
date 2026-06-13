@@ -95,14 +95,15 @@ claimRouter.post("/claim", claimLimiter, async (req, res) => {
   // brute-forcing the answers against the same set of questions).
   deleteSession(sessionId);
 
-  // --- Grade: every answer must match the stored correct index ---
-  const allCorrect = session.questions.every(
+  // --- Grade: count how many answers are correct ---
+  const correctCount = session.questions.filter(
     (q, i) => answers[i] === q.correctIndex,
-  );
-  if (!allCorrect) {
-    // Return the answer key so the UI can show exactly what was right/wrong.
-    // This is safe: the session was already consumed above, so these questions
-    // can never be graded again — revealing the answers leaks nothing useful.
+  ).length;
+
+  const allCorrect = correctCount === 3;
+  
+  if (correctCount === 0) {
+    // No correct answers - show review but no reward
     const review = session.questions.map((q, i) => ({
       question: q.question,
       options: q.options,
@@ -111,10 +112,76 @@ claimRouter.post("/claim", claimLimiter, async (req, res) => {
     }));
     res.json({
       success: false,
-      message:
-        "Not all answers are correct. No reward — get a new set of questions and try again.",
+      message: "No correct answers. Get a new set of questions and try again.",
       review,
     });
+    return;
+  }
+
+  // At least 1 correct - give partial credit via gasless transfer
+  if (!allCorrect) {
+    const review = session.questions.map((q, i) => ({
+      question: q.question,
+      options: q.options,
+      correctIndex: q.correctIndex,
+      yourIndex: answers[i],
+    }));
+
+    // Check if address already claimed
+    if (hasClaimed(user)) {
+      res.status(403).json({
+        success: false,
+        message: "This address has already claimed its ZYD.",
+        review,
+      });
+      return;
+    }
+
+    // Send partial credit via gasless transfer immediately
+    const partialAmount = BigInt(correctCount) * 10n ** 18n; // 1 ZYD per correct answer
+    
+    const privateKey = process.env.SIGNER_PRIVATE_KEY;
+    if (!privateKey) {
+      res.json({
+        success: false,
+        message: `You got ${correctCount}/3 correct, but gasless transfer is not configured.`,
+        review,
+      });
+      return;
+    }
+
+    try {
+      const provider = new JsonRpcProvider(SEPOLIA_RPC);
+      const wallet = new Wallet(privateKey, provider);
+      const token = new Contract(
+        ZYD_TOKEN_ADDRESS,
+        ["function transfer(address to, uint256 amount) returns (bool)"],
+        wallet
+      );
+
+      console.log(`Partial credit: sending ${correctCount} ZYD to ${user}`);
+      const tx = await token.transfer(user, partialAmount);
+      await tx.wait();
+
+      markClaimed(user); // Mark as claimed after successful transfer
+
+      res.json({
+        success: true,
+        partialCredit: true,
+        correctCount,
+        amount: partialAmount.toString(),
+        txHash: tx.hash,
+        message: `You got ${correctCount}/3 correct. ${correctCount} ZYD sent directly to your wallet!`,
+        review,
+      });
+    } catch (err) {
+      console.error("Partial credit transfer failed:", err);
+      res.json({
+        success: false,
+        message: `You got ${correctCount}/3 correct, but we couldn't send the ZYD. Please try again.`,
+        review,
+      });
+    }
     return;
   }
 

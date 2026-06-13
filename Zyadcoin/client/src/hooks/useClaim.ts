@@ -156,6 +156,18 @@ export function useClaim(wallet: UseWalletReturn) {
         setReview(resp.review ?? null); // answer key (absent if session expired)
         return;
       }
+
+      // Check if this was a partial credit gasless transfer (1-2 correct)
+      if (resp.partialCredit && resp.txHash) {
+        setTxHash(resp.txHash);
+        setStatus("success");
+        setMessage(resp.message ?? `You got ${resp.correctCount}/3 correct and earned ${resp.correctCount} ZYD!`);
+        setReview(resp.review ?? null);
+        confetti({ particleCount: 100, spread: 60, origin: { y: 0.6 } });
+        await wallet.refreshBalance();
+        return;
+      }
+
       if (!resp.signature || !resp.amount || !resp.nonce || !resp.deadline) {
         setStatus("error");
         setError("The server did not return a valid signed claim.");

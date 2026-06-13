@@ -218,9 +218,20 @@ function ClaimArea({
   onClaim: () => void;
   onNewSet: () => void;
 }) {
-  // Success: real ZYD released on-chain.
+  // Success: real ZYD released on-chain or via gasless transfer.
   if (claim.status === "success" && claim.txHash) {
-    return <RewardBanner txHash={claim.txHash} onAgain={onNewSet} />;
+    // Extract amount from message if partial credit (e.g., "You got 2/3 correct and earned 2 ZYD!")
+    const amountMatch = claim.message?.match(/earned (\d+) ZYD/);
+    const amount = amountMatch ? parseInt(amountMatch[1]) : 3;
+    
+    return (
+      <RewardBanner 
+        txHash={claim.txHash} 
+        amount={amount}
+        message={claim.message}
+        onAgain={onNewSet} 
+      />
+    );
   }
 
   // Not all correct (or session expired): no reward, get a new set. When the

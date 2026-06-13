@@ -4,16 +4,20 @@ import { TOKEN } from "../config";
 const TX_BASE = "https://sepolia.etherscan.io/tx/";
 
 /**
- * Shown after a successful on-chain claim. The reward is REAL: ZYD was released
- * from the faucet to the user's wallet. Links to the transaction on Etherscan
+ * Shown after a successful on-chain claim or gasless transfer. The reward is REAL:
+ * ZYD was sent to the user's wallet. Links to the transaction on Etherscan
  * and offers another quiz.
  */
 interface RewardBannerProps {
   txHash: string;
+  amount?: number; // Optional: how many ZYD (defaults to 3)
+  message?: string; // Optional custom message
   onAgain: () => void;
 }
 
-export default function RewardBanner({ txHash, onAgain }: RewardBannerProps) {
+export default function RewardBanner({ txHash, amount = 3, message, onAgain }: RewardBannerProps) {
+  const displayMessage = message || `You earned ${amount} ${TOKEN.symbol}!`;
+  
   return (
     <div className="brutal-border bg-green mt-10 rounded-2xl p-6 shadow-brutal-lg md:p-8">
       <div className="flex flex-col items-start justify-between gap-6 md:flex-row md:items-center">
@@ -23,10 +27,10 @@ export default function RewardBanner({ txHash, onAgain }: RewardBannerProps) {
           </div>
           <div>
             <h3 className="font-display text-3xl font-bold tracking-tight md:text-4xl">
-              You earned 3 {TOKEN.symbol}!
+              {displayMessage}
             </h3>
             <p className="mt-1 text-sm font-semibold text-zinc-800">
-              Real {TOKEN.symbol} was released from the faucet to your wallet on Sepolia.
+              Real {TOKEN.symbol} was sent to your wallet on Sepolia.
             </p>
             <a
               href={`${TX_BASE}${txHash}`}

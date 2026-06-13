@@ -45,6 +45,9 @@ export interface ClaimResponse {
   nonce?: string;
   deadline?: string; // unix seconds
   signature?: string;
+  partialCredit?: boolean; // true if user got partial credit (1-2 correct)
+  correctCount?: number; // how many they got right
+  txHash?: string; // hash if gasless transfer was used
 }
 
 export async function fetchTasks(language: string): Promise<TasksResponse> {
