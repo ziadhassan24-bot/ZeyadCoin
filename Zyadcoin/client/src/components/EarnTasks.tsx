@@ -228,7 +228,7 @@ function ClaimArea({
       <RewardBanner 
         txHash={claim.txHash} 
         amount={amount}
-        message={claim.message}
+        message={claim.message ?? undefined}
         onAgain={onNewSet} 
       />
     );

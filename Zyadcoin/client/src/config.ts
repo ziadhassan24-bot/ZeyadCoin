@@ -42,7 +42,7 @@ export const ERC20_ABI = [
 export const FAUCET_ADDRESS = "0x55B7B0dAA9424bfd1328135cffCa244D1bE8C748";
 
 // Faucet ABI. The claim() argument order MUST match the contract exactly:
-// (recipient, amount, nonce, deadline, signature).
+// (amount, nonce, deadline, signature).
 export const FAUCET_ABI = [
-  "function claim(address recipient, uint256 amount, uint256 nonce, uint256 deadline, bytes signature)",
+  "function claim(uint256 amount, uint256 nonce, uint256 deadline, bytes signature)",
 ] as const;

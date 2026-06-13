@@ -161,7 +161,7 @@ claimRouter.post("/claim", claimLimiter, async (req, res) => {
     return;
   }
 
-  // --- All correct: send full reward via gasless ---
+  // --- All correct: build and sign the EIP-712 claim ---
   if (!canSign()) {
     res
       .status(500)
@@ -169,36 +169,80 @@ claimRouter.post("/claim", claimLimiter, async (req, res) => {
     return;
   }
 
-  try {
-    const privateKey = process.env.SIGNER_PRIVATE_KEY;
-    if (!privateKey) {
-      res.status(500).json({ success: false, message: "Gasless transfer not configured." });
-      return;
-    }
+  const amount = REWARD_AMOUNT;
+  const nonce = randomNonce();
+  const deadline = BigInt(Math.floor(Date.now() / 1000) + DEADLINE_SECONDS);
 
+  try {
+    // The EIP-712 value uses "recipient" as the key (matches the contract's
+    // Claim struct); `user` here is the validated/checksummed user address.
+    const signature = await signClaim({ recipient: user, amount, nonce, deadline });
+    
+    // BigInts are returned as strings (JSON has no BigInt). The frontend passes
+    // these straight into the faucet's claim(...) call.
+    res.json({
+      success: true,
+      amount: amount.toString(),
+      nonce: nonce.toString(),
+      deadline: deadline.toString(),
+      signature,
+      gaslessAvailable: true, // Signal that gasless transfer is available
+    });
+  } catch (err) {
+    console.error("Failed to sign claim:", err);
+    res.status(500).json({ success: false, message: "Failed to sign the claim." });
+  }
+});
+
+// POST /api/claim/gasless - Send ZYD directly from backend wallet (no gas required from user)
+// This endpoint allows users without Sepolia ETH to still receive their reward.
+claimRouter.post("/claim/gasless", claimLimiter, async (req, res) => {
+  const { userAddress } = req.body ?? {};
+
+  // Validate address
+  let user: string;
+  try {
+    user = getAddress(typeof userAddress === "string" ? userAddress : "");
+  } catch {
+    res.status(400).json({ success: false, message: "Invalid userAddress." });
+    return;
+  }
+
+  // Check if backend wallet has funds
+  const privateKey = process.env.SIGNER_PRIVATE_KEY;
+  if (!privateKey) {
+    res.status(500).json({ success: false, message: "Gasless transfer not configured." });
+    return;
+  }
+
+  try {
+    // Setup provider and wallet
     const provider = new JsonRpcProvider(SEPOLIA_RPC);
     const wallet = new Wallet(privateKey, provider);
+    
+    // Connect to ZYD token contract
     const token = new Contract(
       ZYD_TOKEN_ADDRESS,
       ["function transfer(address to, uint256 amount) returns (bool)"],
       wallet
     );
 
-    console.log(`Full credit: sending 3 ZYD to ${user}`);
+    // Send ZYD directly (backend pays gas)
+    console.log(`Gasless transfer: sending 3 ZYD to ${user}`);
     const tx = await token.transfer(user, REWARD_AMOUNT);
     await tx.wait();
 
     res.json({
       success: true,
-      amount: REWARD_AMOUNT.toString(),
       txHash: tx.hash,
-      message: "Perfect score! 3 ZYD sent directly to your wallet!",
+      amount: REWARD_AMOUNT.toString(),
+      message: "ZYD sent directly to your wallet! No gas required.",
     });
   } catch (err) {
-    console.error("Full credit transfer failed:", err);
+    console.error("Gasless transfer failed:", err);
     res.status(500).json({ 
       success: false, 
-      message: "Failed to send ZYD. Please try again." 
+      message: "Failed to send ZYD. The backend may not have enough Sepolia ETH for gas, or the token balance is insufficient." 
     });
   }
 });

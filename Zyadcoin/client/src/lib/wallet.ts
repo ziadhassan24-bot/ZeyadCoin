@@ -108,11 +108,11 @@ export async function sendTokens(to: string, amount: string): Promise<string> {
 
 // Submit a signed claim to the faucet to release real ZYD. The signer (the
 // connected wallet) pays gas. The argument order matches the contract exactly:
-// (recipient, amount, nonce, deadline, signature). amount/nonce/deadline arrive
+// (amount, nonce, deadline, signature). amount/nonce/deadline arrive
 // as strings from the backend; ethers coerces them to uint256. Returns the tx
 // hash after one confirmation.
 export async function claimFromFaucet(params: {
-  recipient: string;
+  recipient: string; // kept in type signature for compatibility, contract uses msg.sender
   amount: string;
   nonce: string;
   deadline: string;
@@ -124,7 +124,6 @@ export async function claimFromFaucet(params: {
   const faucet = new Contract(FAUCET_ADDRESS, FAUCET_ABI, signer);
 
   const tx = await faucet.claim(
-    params.recipient,
     params.amount,
     params.nonce,
     params.deadline,
