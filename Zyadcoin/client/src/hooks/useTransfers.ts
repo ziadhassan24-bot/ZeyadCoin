@@ -40,20 +40,35 @@ function saveTransfers(list: TransferRecord[]) {
   localStorage.setItem(TRANSFERS_KEY, JSON.stringify(list));
 }
 
-// Turn an ethers/MetaMask error into a friendly message. ethers v6 reports a
-// user rejection as code "ACTION_REJECTED" (and EIP-1193 code 4001 underneath).
+// Turn an ethers/MetaMask error into a friendly message.
 function describeSendError(err: unknown): string {
   const e = err as {
     code?: number | string;
     shortMessage?: string;
+    reason?: string;
+    message?: string;
     info?: { error?: { code?: number } };
   };
-  const rejected =
-    e?.code === 4001 ||
-    e?.code === "ACTION_REJECTED" ||
-    e?.info?.error?.code === 4001;
-  if (rejected) return "Transaction rejected in MetaMask.";
-  return e?.shortMessage ?? "Transaction failed. Please try again.";
+  const code = e?.code;
+  if (code === 4001 || code === "ACTION_REJECTED" || e?.info?.error?.code === 4001) {
+    return "Transaction rejected in MetaMask.";
+  }
+  if (code === "INSUFFICIENT_FUNDS") {
+    return "Not enough Sepolia ETH for gas. Get some Sepolia ETH and try again.";
+  }
+  const text = `${e?.reason ?? ""} ${e?.shortMessage ?? ""} ${e?.message ?? ""}`.toLowerCase();
+  
+  if (
+    text.includes("coalesce") || 
+    text.includes("missing revert data") || 
+    (text.includes("execution reverted") && text.includes("no data")) ||
+    text.includes("gas") ||
+    text.includes("insufficient")
+  ) {
+    return "Transaction failed - likely due to insufficient Sepolia ETH for gas, or wrong network. Please make sure you have at least 0.001 Sepolia ETH.";
+  }
+  
+  return e?.shortMessage ?? e?.reason ?? "Transaction failed. Please make sure you have Sepolia ETH for gas.";
 }
 
 export function useTransfers() {
