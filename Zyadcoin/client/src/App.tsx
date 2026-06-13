@@ -6,6 +6,7 @@ import WalletPanel from "./components/WalletPanel";
 import SendZyd from "./components/SendZyd";
 import ContractSection from "./components/ContractSection";
 import Footer from "./components/Footer";
+import SepoliaGasHelper from "./components/SepoliaGasHelper";
 import { useWallet } from "./hooks/useWallet";
 import { shortAddress } from "./lib/wallet";
 
@@ -41,6 +42,10 @@ export default function App() {
       </div>
 
       <EarnTasks wallet={wallet} />
+      
+      {/* Gas helper: show if user is on Sepolia but has no/low ETH */}
+      <SepoliaGasHelper wallet={wallet} />
+      
       <WalletPanel wallet={wallet} />
 
       {/* Send ZYD — only shown once a wallet is connected. */}

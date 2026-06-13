@@ -52,6 +52,12 @@ function describeClaimError(err: unknown): string {
     return "Not enough Sepolia ETH for gas. Get some from a Sepolia faucet and try again.";
   }
   const text = `${e?.reason ?? ""} ${e?.shortMessage ?? ""} ${e?.message ?? ""}`.toLowerCase();
+  
+  // Check for the specific "missing revert data" / "execution reverted" error
+  if (text.includes("missing revert data") || (text.includes("execution reverted") && text.includes("no data"))) {
+    return "Transaction failed - likely insufficient Sepolia ETH for gas, or you're on the wrong network. Make sure you're on Sepolia and have at least 0.001 Sepolia ETH.";
+  }
+  
   if (text.includes("deadline") || text.includes("expired")) {
     return "This claim expired (signatures are valid for 10 minutes). Get a new set and try again.";
   }
@@ -61,7 +67,10 @@ function describeClaimError(err: unknown): string {
   if (text.includes("insufficient") || text.includes("balance") || text.includes("empty")) {
     return "The faucet is out of ZYD right now. Try again later.";
   }
-  return e?.shortMessage ?? e?.reason ?? "The claim transaction failed. Please try again.";
+  if (text.includes("gas")) {
+    return "Not enough Sepolia ETH for gas. Get testnet ETH from a Sepolia faucet and try again.";
+  }
+  return e?.shortMessage ?? e?.reason ?? "The claim transaction failed. Make sure you're on Sepolia and have Sepolia ETH for gas.";
 }
 
 export function useClaim(wallet: UseWalletReturn) {
